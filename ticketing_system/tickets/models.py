@@ -20,9 +20,28 @@ class Ticket(models.Model):
     )
     users = models.ManyToManyField(User, related_name="tickets")
     created_at = models.DateTimeField(auto_now_add=True)
+    paid = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.type.name} - {self.owner.username}"
+
+
+class Cart(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Cart of {self.user.username}"
+
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, related_name="items", on_delete=models.CASCADE)
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return f"{self.quantity} of {self.ticket.type.name} in {self.cart.user.username}'s cart"
 
 
 class Invitation(models.Model):
@@ -33,3 +52,17 @@ class Invitation(models.Model):
     invited_by = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     accepted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Invitation for {self.email} to {self.ticket.type.name}"
+
+
+class Payment(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE)
+    stripe_charge_id = models.CharField(max_length=100)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.ticket.type.name} - {self.amount}"

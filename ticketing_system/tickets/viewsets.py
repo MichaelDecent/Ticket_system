@@ -1,8 +1,10 @@
+import stripe
+from ticketing_system import settings
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .utils import send_inviatation_email
-from .models import Ticket, TicketType, Invitation
+from .models import Ticket, TicketType, Invitation, Payment, Cart, CartItem
 from django.contrib.auth.models import User
 from .serializers import (
     TicketSerializer,
@@ -11,6 +13,9 @@ from .serializers import (
     UserSerializer,
     InvitationCreateSerializer,
     InvitationSerializer,
+    PaymentSerializer,
+    CartItemSerializer,
+    CartSerializer,
 )
 
 
@@ -30,12 +35,17 @@ class TicketViewSet(viewsets.ModelViewSet):
         return TicketSerializer
 
     def perform_create(self, serializer):
-        ticket = serializer.save(owner=self.request.user)
+        ticket = serializer.save(owner=self.request.user, paid=False)
         ticket.users.add(self.request.user)
 
     @action(detail=True, methods=["post"])
     def invite(self, request, pk=None):
         ticket = self.get_object()
+        if not ticket.paid:
+            return Response(
+                {"status": "ticket not paid"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer = InvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         emails = serializer.validated_data.get("emails")
@@ -68,3 +78,114 @@ class TicketViewSet(viewsets.ModelViewSet):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+
+    def create(self, request, *arg, **kwargs):
+        user = request.user
+        token = request.data.get("stripe_token")
+
+        try:
+            cart = Cart.objects.get(user=user)
+            if not cart.items.exists():
+                return Response(
+                    {"status": "cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            total_amount = sum(
+                item.ticket.type.price * item.quantity for item in cart.items.all()
+            )
+
+            charge = stripe.Charge.create(
+                amount=int(total_amount * 100),
+                currency="usd",
+                description=f"Ticket purchase for {user.username}",
+                source=token,
+                api_key=settings.STRIPE_SECRET_KEY,
+            )
+
+            payment = Payment.objects.create(
+                user=user, ticket=ticket, stripe_charge_id=charge["id"], amount=amount
+            )
+
+            payments = []
+            for item in cart.items.all():
+                payment = Payment.objects.create(
+                    user=user,
+                    ticket=item.ticket,
+                    stripe_charge_id=charge["id"],
+                    amount=item.ticket.type.price * item.quantity,
+                )
+                item.ticket.users.add(user)
+                item.ticket.paid = True
+                item.ticket.save()
+                payments.append(payment)
+
+            cart.items.all().delete()
+
+            return Response(
+                {
+                    "status": "payment successful",
+                    "payment": PaymentSerializer(payment).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except stripe.error.StripeError as e:
+            return Response(
+                {"status": "payment failed", "error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Cart.DoesNotExist:
+            return Response(
+                {"status": "cart not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class CartViewSet(viewsets.ModelViewSet):
+    queryset = Cart.objects.all()
+    serializer_class = CartSerializer
+
+    def get_queryset(self):
+        return self.queryset.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        cart = Cart.objects.get_or_create(user=request.user)
+        return Response(CartSerializer(cart).data)
+
+
+class CartItemViewSet(viewsets.ModelViewSet):
+    queryset = CartItem.objects.all()
+    serializer_class = CartItemSerializer
+
+    def get_queryset(self):
+        return self.queryset.filter(cart__user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        cart, created = Cart.objects.get_or_create(user=request.user)
+        ticket_id = request.data.get("ticket_id")
+        quantity = request.data.get("quantity", 1)
+
+        try:
+            ticket = Ticket.objects.get(id=ticket_id)
+            cart_item, created = CartItem.objects.get_or_create(
+                cart=cart, ticket=ticket
+            )
+            if not created:
+                cart_item.quantity += int(quantity)
+                cart_item.save()
+            return Response(
+                CartItemSerializer(cart_item).data, status=status.HTTP_201_CREATED
+            )
+        except Ticket.DoesNotExist:
+            return Response(
+                {"status": "ticket not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)

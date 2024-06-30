@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Ticket, TicketType, Invitation
+from .models import Ticket, TicketType, Invitation, Payment, Cart, CartItem
 
 
 class TicketTypeSerializer(serializers.ModelSerializer):
@@ -38,7 +38,26 @@ class InvitationSerializer(serializers.ModelSerializer):
 
 
 class InvitationCreateSerializer(serializers.Serializer):
-    emails = serializers.ListField(
-        child=serializers.EmailField(),
-        allow_empty=False
-    )
+    emails = serializers.ListField(child=serializers.EmailField(), allow_empty=False)
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = ["id", "user", "ticket", "stripe_charge_id", "amount", "created_at"]
+
+
+class CartItemSerializer(serializers.ModelSerializer):
+    ticket = TicketSerializer()
+
+    class Meta:
+        model = CartItem
+        fields = ["id", "ticket", "quantity"]
+
+
+class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(many=True)
+
+    class Meta:
+        model = Cart
+        fields = ["id", "user", "items", "created_at", "updated_at"]
