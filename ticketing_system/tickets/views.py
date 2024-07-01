@@ -1,11 +1,9 @@
-from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.views import APIView
-# from rest_framework import generics
 from rest_framework.permissions import AllowAny
-from .models import Invitation
+from rest_framework.response import Response
+from rest_framework import status
 from django.contrib.auth.models import User
-
+from .models import Invitation
 
 
 class AcceptInvitationView(APIView):
@@ -15,11 +13,14 @@ class AcceptInvitationView(APIView):
         try:
             invitation = Invitation.objects.get(id=invitation_id)
             if not invitation.accepted:
-                user = User.objects.create_user(
-                    username=invitation.email.split("@")[0],
-                    email=invitation.email,
-                    password=User.objects.make_random_password(),
-                )
+                try:
+                    user = User.objects.get(email=invitation.email)
+                except User.DoesNotExist:
+                    user = User.objects.create_user(
+                        username=invitation.email.split("@")[0],
+                        email=invitation.email,
+                        password=User.objects.make_random_password(),
+                    )
                 invitation.ticket.users.add(user)
                 invitation.accepted = True
                 invitation.save()

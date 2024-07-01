@@ -11,8 +11,8 @@ def send_inviatation_email(invitation, request):
         {
             "inviter": invitation.invited_by.username,
             "ticket_type": invitation.ticket.type.name,
-            "accept_url": request.build_absolute_uri(reverse(
-                "accept_invitation", args=[invitation.id])
+            "accept_url": request.build_absolute_uri(
+                reverse("accept_invitation", args=[invitation.id])
             ),
         },
     )
@@ -21,3 +21,4 @@ def send_inviatation_email(invitation, request):
     )
     msg.attach_alternative(html_content, "text/html")
     msg.send()
+

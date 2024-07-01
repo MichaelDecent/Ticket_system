@@ -14,8 +14,9 @@ from .serializers import (
     InvitationCreateSerializer,
     InvitationSerializer,
     PaymentSerializer,
-    CartItemSerializer,
     CartSerializer,
+    CreateCartItemSerializer,
+    PaymentCreateSerializer,
 )
 
 
@@ -37,6 +38,7 @@ class TicketViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         ticket = serializer.save(owner=self.request.user, paid=False)
         ticket.users.add(self.request.user)
+        return Response(TicketSerializer(ticket).data)
 
     @action(detail=True, methods=["post"])
     def invite(self, request, pk=None):
@@ -82,12 +84,18 @@ class UserViewSet(viewsets.ModelViewSet):
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
-    serializer_class = PaymentSerializer
 
-    def create(self, request, *arg, **kwargs):
-        user = request.user
-        token = request.data.get("stripe_token")
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PaymentCreateSerializer
+        return PaymentSerializer
 
+    def create(self, request):
+        serializer = PaymentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = self.request.user
+        token = serializer.validated_data.get("stripe_token")
         try:
             cart = Cart.objects.get(user=user)
             if not cart.items.exists():
@@ -105,10 +113,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 description=f"Ticket purchase for {user.username}",
                 source=token,
                 api_key=settings.STRIPE_SECRET_KEY,
-            )
-
-            payment = Payment.objects.create(
-                user=user, ticket=ticket, stripe_charge_id=charge["id"], amount=amount
             )
 
             payments = []
@@ -129,7 +133,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "status": "payment successful",
-                    "payment": PaymentSerializer(payment).data,
+                    "payment": PaymentSerializer(payments, many=True).data,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -150,24 +154,17 @@ class CartViewSet(viewsets.ModelViewSet):
     serializer_class = CartSerializer
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
-
-    def create(self, request, *args, **kwargs):
-        cart = Cart.objects.get_or_create(user=request.user)
-        return Response(CartSerializer(cart).data)
-
-
-class CartItemViewSet(viewsets.ModelViewSet):
-    queryset = CartItem.objects.all()
-    serializer_class = CartItemSerializer
-
-    def get_queryset(self):
         return self.queryset.filter(cart__user=self.request.user)
 
-    def create(self, request, *args, **kwargs):
+    def get_serializer_class(self):
+        if self.action == "create":
+            return CreateCartItemSerializer
+        return CartSerializer
+
+    def create(self, request):
         cart, created = Cart.objects.get_or_create(user=request.user)
         ticket_id = request.data.get("ticket_id")
-        quantity = request.data.get("quantity", 1)
+        quantity = request.data.get("quantity")
 
         try:
             ticket = Ticket.objects.get(id=ticket_id)
@@ -177,15 +174,13 @@ class CartItemViewSet(viewsets.ModelViewSet):
             if not created:
                 cart_item.quantity += int(quantity)
                 cart_item.save()
-            return Response(
-                CartItemSerializer(cart_item).data, status=status.HTTP_201_CREATED
-            )
+            return Response(CartSerializer(cart).data, status=status.HTTP_201_CREATED)
         except Ticket.DoesNotExist:
             return Response(
                 {"status": "ticket not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.perform_destroy(instance)
+    def destroy(self, request, pk):
+        cart_item = CartItem.objects.get(id=pk)
+        self.perform_destroy(cart_item)
         return Response(status=status.HTTP_204_NO_CONTENT)

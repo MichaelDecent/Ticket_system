@@ -6,13 +6,13 @@ from .models import Ticket, TicketType, Invitation, Payment, Cart, CartItem
 class TicketTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketType
-        fields = ["id", "name", "max_users"]
+        fields = ["id", "name", "max_users", "price"]
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "username", "email"]
+        fields = ["id", "username", "email", "password"]
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -44,15 +44,22 @@ class InvitationCreateSerializer(serializers.Serializer):
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = ["id", "user", "ticket", "stripe_charge_id", "amount", "created_at"]
+        fields = ["id", "ticket", "stripe_charge_id", "amount", "created_at"]
+
+
+class PaymentCreateSerializer(serializers.Serializer):
+    stripe_token = serializers.CharField()
 
 
 class CartItemSerializer(serializers.ModelSerializer):
-    ticket = TicketSerializer()
-
     class Meta:
         model = CartItem
         fields = ["id", "ticket", "quantity"]
+
+
+class CreateCartItemSerializer(serializers.Serializer):
+    ticket_id = serializers.IntegerField()
+    quantity = serializers. IntegerField()
 
 
 class CartSerializer(serializers.ModelSerializer):

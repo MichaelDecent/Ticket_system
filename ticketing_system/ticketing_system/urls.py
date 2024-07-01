@@ -10,7 +10,6 @@ from tickets.viewsets import (
     TicketViewSet,
     UserViewSet,
     PaymentViewSet,
-    CartItemViewSet,
     CartViewSet,
 )
 
@@ -21,17 +20,16 @@ schema_view = get_schema_view(
         default_version="v1",
         description="A RESTful API that manages a Ticketing sysytem",
     ),
-    public=False,
-    permission_classes=[permissions.IsAuthenticated],
+    public=True,
+    permission_classes=[permissions.AllowAny],
 )
 
 router = DefaultRouter()
 router.register(r"ticket-types", TicketTypeViewSet)
 router.register(r"tickets", TicketViewSet)
 router.register(r"users", UserViewSet)
-router.register(r"payments", PaymentViewSet)
+router.register(r"payments", PaymentViewSet, basename="payment")
 router.register(r"carts", CartViewSet, basename="cart")
-router.register(r"cart-items", CartItemViewSet, basename="cartitem")
 
 
 urlpatterns = [
